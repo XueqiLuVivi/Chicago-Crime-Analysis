@@ -1,0 +1,1185 @@
+\documentclass[10pt]{article}
+\usepackage[left=1in,right=1in,top=1in,bottom=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{hyphenat}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{float} 
+\usepackage[utf8]{inputenc}
+
+\begin{document}
+\title{Chicago Crime Analysis}
+\author{Abdullah Zaher, Anh Pham, Ziting Tang, Xueqi Lu}
+\maketitle
+
+%--------------------------------------------------------------------------------
+
+<<echo=FALSE,results='hide',warning=FALSE,message=FALSE>>=
+library(ggplot2)
+library(plyr)
+library(scales)
+library(zoo)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(RSQLite)
+library(grid)
+library(kableExtra)
+library(knitr)
+
+basedata <- read.csv("/Users/xueqilu/Desktop/605/Workspace/FinalProject/Crimes.csv")
+@
+\section{Introduction}
+
+Regardless of city, county, state, or country, crime is a negative aspect of society that affects a vast majority of people whether directly or indirectly. There are multiple datasets available that analyze different types of crimes in different regions of the world that may draw different conclusions. These types of crimes may differ in popularity depending on many factors of the local societies such as geographical location, socioeconomic status, technological advancements, strength of media coverage, and many more. For these reasons, data can be beneficial in tracking and analyzing the trends of each crime in each region for the sake of public information for increased precautions and potentially to help combat these trends in the correct manner depending on the respective trends. In this report, the preliminary objective is to gather crime data in a specific region, analyze and visualize it, and potentially relate it to other data that may seem very unrelated at first glance.
+
+%--------------------------------------------------------------------------------
+
+\section{Data Description (Primary Dataset)}
+
+The primary dataset being analyzed is titled "Crimes - 2001 to Present $\mid$ City of Chicago". This dataset consists of well over one-million crime reports (2001 - Present) with 22 features. Each report contains information on crime type and sub-type, date and time, address and coordinates, and result of the report (arrest or non-arrest). It is important to note that the crime types included in this dataset are all arrestable offenses in the specific year that they occurred (some laws may have changed over the years). Chicago is notoriously and statistically known for its high crime rates which is a local's nightmare but a data-scientist's gold mine because of the plethora of data available. The abundance of features/variables provides us with many routes and trends to analyze while utilizing different approaches and visualizations to draw up some questions and have the data answer them.\\
+
+In our project, the following variables in the dataset have been frequently used.
+
+\begin{table}[H]
+\begin{center}
+<<results='asis', message=FALSE, echo=FALSE,fig.pos ="H", out.extra="">>=
+
+df <- data.frame(
+  "Variables"=c("Date","Primary.Type","Description","Location.Description",
+                "Arrest","Domestic"),
+  "Interpretation"=c("Date and time", "Crime Type", "Crime Description",
+                     "Crime Location", "Whether arrested","Whether domestic"),
+  "Variables"=c("Beat", "District", "Community.Area","X.Coordinate",
+                "Y.Coordinate","Year"),
+  "Interpretation"=c("Geographic Area of the City Broken Down for Patrol",
+                     "District Number", "Community Area Number",
+                     "Geographic Coordinates of the crime",
+                     "Geographic Coordinates of the crime", "Year"))
+kable(df, "latex", booktabs = T,linesep = "") %>%
+  kable_styling(position = "center",latex_options = c("scale_down", "HOLD_position")) %>%
+  add_header_above(c("Crimes Parameters" = 4)) 
+@
+\caption{Crimes Parameters}
+\end{center}
+\end{table}
+
+\newpage
+
+For visualization purposes, we have included a few rows of data below:
+
+\begin{table}[H]
+\begin{center}
+<<results='asis', message=FALSE, echo=FALSE,fig.pos ="H", out.extra="">>=
+
+dt <- data.frame("Date" = c("9/5/15 13:30","9/4/15 11:30","09/01/18 12:01","09/05/15 12:45","09/05/15 13:00"),
+                 "Primary Type" = c("BATTERY","THEFT","THEFT","NARCOTICS","ASSAULT" ),
+                 "Description" = c("DOMESTIC BATTERY SIMPLE","POCKET-PICKING","OVER $500","POSS: HEROIN(BRN/TAN)","SIMPLE" ),
+                 "Location Description" = c("RESIDENCE", "CTA BUS","RESIDENCE","SIDEWALK" ,"APARTMENT"),
+                 "Arrest" = c("FALSE","FALSE","FALSE","TRUE","FALSE"),
+                 "Domestic" = c("TRUE", "FALSE","TRUE","FALSE","TRUE"),
+                 "Beat" = c("924","1511","631","1412","1522"),
+                 "District" = c("9","15","6","14","15"),
+                 "Community Area" = c("61","52","44","21","25"),
+                 "X Coordinate" = c("1165074", "1138875","1152037","1141706","1168430"),
+                 "Y Coordinate" = c("1875917", "1904869","1920384","1900086","1850165"),
+                 "Year" = c("2015","2015","2018","2015","2015")
+                 )
+kable(dt, "latex", booktabs = T,linesep = "") %>%
+  kable_styling(position = "center",font_size = 8,latex_options = c("scale_down", "HOLD_position")) %>%
+  add_header_above(c("Few Rows of Dataset" = 12)) 
+@
+\caption{Few Rows of Dataset}
+\end{center}
+\end{table}
+
+
+%--------------------------------------------------------------------------------
+\section{Questions/Hypotheses and Preliminary Conclusions}
+
+\begin{enumerate}
+    \item 
+    
+    After test driving the dataset for the first time, the natural initial question is "Is overall crime trending upwards or downwards over the years?" Due to the increased reach of the media in the modern day, our expectation/assumption is that crime will be trending upwards with high confidence.
+
+(Method: Base R)
+
+
+<<echo=FALSE,results='hide',fig.align='center',warning=FALSE,fig.width=4.5, fig.height=4.5>>=
+
+data <- basedata
+Year <- data$Year
+df <- as.data.frame(table(Year))
+df <- df[1:21,]
+Year <- df$Year
+Year <- factor(Year, levels = Year)
+Frequency <- df$Freq
+Year <- as.numeric(as.character(Year))
+
+# plot
+plot(Year, Frequency, pch = 19, type = "b",
+     col = "red", xlab = "Year", ylab = "Number of Cases", xlim = c(2001,2021),
+     cex.lab=0.7, cex.axis=0.7, cex.main=0.9, cex.sub=0.7,
+     main = "Crime Tendency during 2001-2021")
+rect(par("usr")[1], par("usr")[3],
+     par("usr")[2], par("usr")[4],
+     col = "grey95") # Color
+
+# Add a new plot
+par(new = TRUE)
+plot(Year, Frequency, pch = 19, type = "b",
+     col = "red", xlab = "Year", ylab = "Number of Cases", xlim = c(2001,2021),
+     cex.lab=0.7, cex.axis=0.7, cex.main=0.9, cex.sub=0.7,
+     main = "Crime Tendency during 2001-2021")
+grid(col = "white",lwd = 1.5)
+par(new = TRUE)
+plot(Year, Frequency, pch = 19, type = "b",
+     col = "red", xlab = "Year", ylab = "Number of Cases", xlim = c(2001,2021),
+     cex.lab=0.7, cex.axis=0.7, cex.main=0.9, cex.sub=0.7,
+     main = "Crime Tendency during 2001-2021")
+@
+
+
+To our surprise, the end result was not what we expected. Except for a slight increase from 2021 to 2002, the overall trend shows a downward trend year by year. The crime rate had a slow decline that started in 2002 until the first dip in 2009, and the dip continued into 2015. The crime rate leveled off from 2015 to 2019, then began to plummet in 2020, reaching the lowest crime rate in Chicago in 2021.
+
+\item
+Naturally, our next instinct was to figure out what crimes are the most common in Chicago over the years. We now know that overall crime has been decreasing over the years in Chicago but knowing what crimes are the most common could help us develop more questions to ask. Initially, our assumption was that Robbery and Theft-Related crimes were the most common since we all know friends or family that have experienced robberies. 
+
+(Method: DPLYR)
+
+
+<<echo=FALSE,results='hide',fig.align='center',warning=FALSE, fig.height=5>>=
+frame <- data.frame(basedata$`Primary.Type`, basedata$Year)
+colnames(frame)[1] <- "Type"
+colnames(frame)[2] <- "Year"
+
+df <- data.frame(table(frame$Type, frame$Year))
+colnames(df)[1] <- "Type"
+colnames(df)[2] <- "Year"
+colnames(df)[3] <- "Cases"
+
+df2 <- df[df$Type %in% c("ASSAULT","BATTERY","BURGLARY","CRIMINAL DAMAGE", "DECEPTIVE PRACTICE", "MOTOR VEHICLE THEFT", "NARCOTICS", "OTHER OFFENSE", "ROBBERY","THEFT"),]
+
+colnames(df2)[1] <- "Type"
+colnames(df2)[2] <- "Year"
+colnames(df2)[3] <- "Offenses"
+
+# Line plot with multiple groups
+g <- ggplot(data=df2, aes(x=Year, y=Offenses, group=Type, col = Type)) +
+geom_line()+
+geom_point()
+g + labs(title = "Trends of Prevalent Crimes in Chicago (2001 - 2020)") + 
+     theme(plot.title = element_text(hjust=0.5,size = 10),
+          legend.text = element_text(size=8),
+          legend.key.size = unit(15, 'pt'),
+          legend.title = element_blank(),
+          legend.position = "bottom",
+          axis.title.y = element_text(margin=margin(r=8),size = 10),
+          axis.title.x = element_text(margin=margin(t=10),size = 10),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+          
+          )
+
+
+@
+
+
+The results supported our initial assumptions that theft-related crimes were the most prevalent. It can be seen from the graph that although the number of thefts has declined, it is still the most prevalent crime of all crime types. Even as the overall crime rate leveled off from 2015 to 2019, the crime rate for theft increased.
+
+\item
+Our next question was geared towards date and time. Since we now know that theft is the most common crime, we wanted to know at what times of the year are theft crimes most common and whether or not time of year was correlated with the number of crimes committed. Our initial assumption was that crime was more likely to occur during holidays when people were distracted and away from their homes. The holidays that apply to this category are Valentines, Summer Vacation, Spring Break, and New Years Eve.
+
+(Method: DPLYR and GGPLOT)
+
+<<echo=FALSE,results='hide',fig.align='center',warning=FALSE>>=
+data <- basedata
+data <- data %>% filter(Primary.Type == "THEFT")
+dat <- data[, c("Date",  "Year")]
+dat1 <- dat[dat$Year %in% c("2005","2007","2009","2011","2013","2015"), ]
+dat1 <- separate(dat1, Date, into = c("Date", "Time", "Zone"), sep = " ")
+dat2 <- dat1[, c("Date",  "Year")]
+dat2 <- dat2 %>% group_by(Date) %>% dplyr::summarise(Crimes = n())
+dat2 <- dat2 %>% separate(Date, c('Month', 'Day', 'year'))
+dat2$date <- as.Date(paste(dat2$year,"-",dat2$Month,"-",dat2$Day,sep = ""))
+dat2 <- dat2[, c("date",  "Crimes", "year")]
+dat2$year <- as.integer(dat2$year)
+dat2$weekdayf <- weekdays(dat2$date) 
+dat2$week <- ceiling(day(dat2$date) / 7)
+dat2$monthf <- months(dat2$date)
+dat2$yearmonth <- as.yearmon(dat2$date)
+dat2$yearmonthf <- factor(dat2$yearmonth)
+dat2_df <- ddply(dat2,.(yearmonthf), transform, monthweek=1+week-min(week))
+dat2_df$weekdayf  <- factor(dat2_df$weekdayf , 
+                            levels = c("Monday","Tuesday","Wednesday",
+                                       "Thursday","Friday","Saturday","Sunday"))
+dat2_df$monthf  <- factor(dat2_df$monthf , 
+                            levels = c("January","February","March","April","May",
+                                       "June","July","August","September",
+                                       "October","November","December" ))
+
+ggplot(dat2_df, aes(monthweek, weekdayf, fill = Crimes)) + 
+  geom_tile(colour = "white") + 
+  facet_grid(year~monthf) + 
+  scale_fill_gradient(low="lawngreen", high="red") +
+  labs(x="Week of Month",
+       y="",
+       title = "Trend of Theft Crimes in 2005-2015 Heatmap", 
+       fill="Number of Crimes") +    
+  theme(plot.title = element_text(hjust=0.5),
+          legend.text = element_text(size=8),
+          legend.key.size = unit(15, 'pt'),
+          legend.title = element_blank(),
+          legend.position = "bottom",
+          axis.title.y = element_text(margin=margin(r=8)),
+          axis.title.x = element_text(margin=margin(t=10)))
+
+
+@
+
+
+After creating the plot above, the result that stands out (dark red) is that theft is most prevalent around the New Years holiday, which is somewhat consistent with our assumption. Other than that day, the spread of theft crimes across the years did not seem to have a consistency but it was more common around the Spring - Summer timeframe. It seems as though thieves do not like to commit crimes during cold weather.
+
+\item
+We have now dealt with the date and time aspect of theft. Next, we will discuss the location aspect and answer the following question: In which locations are theft-related crimes the most common. The results of the date and time analysis did not create a solid and concrete conclusion and that is what drove us towards the location aspect next. Due to the fact that there were over 200+ location categories in our dataset, we decided to create a few larger categories and group the sub-categories together to provide a cleaner result. Below is the split that we used for grouping for reference purposes (used RegEx for location replacement):
+
+\begin{itemize}
+  \item Residence :Residence, Apartment, Driveway, Condo, etc.,
+  \item Street: Street, Sidewalk, Alley, Park, Parking lot, Construction Site, Land, Highway, Bridge, Forest, Cemetery, Gas, Railroad etc.
+  \item Store: Grocery, Retail, Restaurant, Store, Gas station, Bar, Barbershop, Shop etc.
+  \item Vehicles: Bus, Taxi, Vehicle, CTA, Train, Car, Boat, Truck etc.
+  \item Public Building: Hospital, School, Bank, Stadium, Fire Station, Police, Credit Union, Building, Theater, Hotel, Church/Synagogue/Place of Worship, College, University, Motel, Office, Factory, Airport, Garage, Warehouse, Pool, etc.
+  \item Other: Other and Abandon.
+\end{itemize}
+
+(Method: SQL, GGPLOT, RegEx)
+
+
+<<echo=FALSE,fig.align='center',warning=FALSE, message=FALSE,fig.width=4.5, fig.height=4.5>>=
+dcon <- dbConnect(SQLite(), dbname="/Users/xueqilu/Desktop/605/FinalProjectDraft/Draft5/ChicagoCrime.sqlite")
+
+res <- dbSendQuery(conn = dcon, "
+SELECT *
+FROM theftcrime
+LIMIT 10
+")
+dftest <- dbFetch(res, -1)
+dbClearResult(res)
+
+res <- dbSendQuery(conn = dcon, "
+SELECT Location, Year, Count(ID) AS Num
+FROM theftcrime
+GROUP BY Location, Year
+")
+dfcount <- dbFetch(res, -1)
+dbClearResult(res)
+
+g <- ggplot(dfcount, aes(fill=Location, y=Num, x=Year)) + 
+    geom_bar(position="fill", stat="identity") +
+    ggtitle("Proportion of Locations Where Theft happened") +
+    scale_x_continuous(breaks = round(seq(2005, 2015, 2), 1)) +
+    ylab('Percent')+
+    guides(fill=guide_legend(ncol=1)) +
+    scale_fill_brewer(palette = 'RdYlBu') +
+    theme(plot.title = element_text(hjust=0.5,size = 10),
+          legend.text = element_text(size=8),
+          legend.key.size = unit(8, 'pt'),
+          legend.title = element_blank(),
+          legend.position = "bottom",
+          axis.title.y = element_text(margin=margin(r=8)),
+          axis.title.x = element_text(margin=margin(t=10)))
+g
+@
+
+
+
+From the plot we can see the proportion of theft on the street is the highest which close to 40$\%$. The proportion of theft from the residence building and store is relatively close both about 12.5$\%$. There are fewer thefts in public buildings, followed by other and thefts from vehicles.
+
+\item
+One particularly interesting feature in this data was the Arrest/No Arrest feature. This feature provides information on whether or not an arrest was carried out in that specific crime. Looking at the same location split as the previous plot, we decided to figure out the ratio of arrests-non arrests for thefts in those specific locations across the years. With the evident increase in security technology such as CCTV, home-intruder alarm systems, and sophisticated locking systems, our natural assumption was that arrests were taking place more often than not.
+
+(Method: SQL, GGPLOT, RegEx)
+
+
+<<echo=FALSE,results='hide',fig.align='center',warning=FALSE,fig.width=4.5, fig.height=6>>=
+res <- dbSendQuery(conn = dcon, "
+SELECT Year, Arrest, Location, count(Arrest) AS n 
+FROM theftcrime
+GROUP BY Year, Arrest, Location
+;")
+mydf1 <- dbFetch(res, -1)
+dbClearResult(res)
+
+mydf1 <- spread(mydf1, key = Arrest, value = n)
+head(mydf1,5)
+
+ggplot(mydf1, aes(x=Year)) + 
+  geom_area(aes(y=false, fill="No Arrest")) + 
+  geom_area(aes(y=true, fill="Arrest")) +
+  facet_wrap(vars(Location  ), scales = "free", ncol=2) +
+  labs(title="Area Chart of Theft Arrest Number by Location Description", 
+       y="Frequency")  +
+  scale_x_continuous(breaks = round(seq(2005, 2015, 2), 1))+
+    theme(plot.title = element_text(hjust=0.5,size = 10),
+          legend.text = element_text(size=8),
+          legend.key.size = unit(8, 'pt'),
+          legend.title = element_blank(),
+          legend.position = "bottom",
+          axis.title.y = element_text(margin=margin(r=8)),
+          axis.title.x = element_text(margin=margin(t=10)))
+dbDisconnect(dcon)
+@
+
+
+
+The results of the plot above were very shocking to us. The amount of non-arrests completely outweighed the amount of arrests in all but one location type (Stores). Even in the store category, it seems as though the number of arrests in the last 7-8 years has been declining, which is the overall conclusion. As years go by, the number of arrests has been declining and the number of non-arrests has been also declining in most cases but still outweighing the number of arrests by a very large margin. We would be very concerned if we were living in Chicago after realizing this.
+
+\end{enumerate}
+
+\section{Analysis with more datasets}
+
+\begin{enumerate}
+
+\item Data Description (Secondary Dataset)
+
+It was difficult to find a Chicago-specific dataset and so we took a bit of a different approach. Instead, we searched for a secondary dataset that would show us national data in lieu of Chicago-specific data and our plan was to potentially filter out this data to get us what we wanted. Our secondary dataset is titled “Daily Temperature of Major Cities”. The dataset description is very much stated in the name. The main columns are the City, Day, Month, Year, and Temperature. We used this dataset and filtered by the city of Chicago and the Years 2005 - 2015 in order to grasp the data that was going to be helpful in our analysis.
+
+The following table shows the variables included in the secondary dataset and the explanation of each variable.
+
+\begin{table}[H]
+\begin{center}
+<<results='asis', message=FALSE, echo=FALSE,fig.pos ="H", out.extra="">>=
+
+df <- data.frame(
+  "Variables"=c("region","Country","State","City"),
+  "Interpretation"=c("Continent name", "Country name", "State name","City name"),
+  "Variables"=c("Month", "Day", "Year","AvgTemperature"),
+  "Interpretation"=c("Month","Day","Year",
+                     "Average Temperature of the day"))
+kable(df, "latex", booktabs = T,linesep = "") %>%
+  kable_styling(position = "center",font_size = 9,latex_options = c("HOLD_position")) %>%
+  add_header_above(c("Temperature Dataset Parameters" = 4)) 
+@
+\caption{Temperature Dataset Parameters}
+\end{center}
+\end{table}
+
+For visualization purposes, we have included a few rows of data below:
+
+\begin{table}[H]
+\begin{center}
+<<results='asis', message=FALSE, echo=FALSE,fig.pos ="H", out.extra="">>=
+
+dt <- data.frame("Region" = c("Africa","Africa","Africa","Africa","Africa"),
+                 "Country" = c("Algeria","Algeria","Algeria","Algeria","Algeria"),
+                 "State" = c(NA,NA,NA,NA,NA),
+                 "City" = c("Algiers","Algiers","Algiers","Algiers","Algiers"),
+                 "Month" = c("1","1","1","1","1"),
+                 "Day" = c("1","2","3","4","5"),
+                 "Year" = c("1995","1995","1995","1995","1995"),
+                 "AvgTemperature" = c("64.2","49.4","48.8","46.4","47.9"))
+kable(dt, "latex", booktabs = T,align = c('l','c','c','c','c','c','c','c'),linesep = "",escape = FALSE) %>%
+  kable_styling(position = "center",font_size = 9,latex_options = c("HOLD_position")) %>%
+  add_header_above(c("Few Rows of Dataset" = 8)) 
+@
+\caption{Few Rows of Dataset}
+\end{center}
+\end{table}
+
+
+\item Secondary Dataset Analysis (Questions/Hypotheses)
+
+
+Although we all have a general idea on which months are the warm months and which months are the cold months, we did not want to make any generalizations. We have the data and wanted the data to speak for itself. Similar to what we did with our primary crime dataset, we decided to build a calendar heat map across the years being analyzed to help visualize which months are the cold months and which are the hot months to possibly help connect crime with temperature. Though this sounds simple, it could help us tremendously to build a connection between the two datasets and draw up some initial conclusions. 
+
+
+<<echo=FALSE,results='hide',warning=FALSE,message=FALSE>>=
+
+datas <- read.csv("/Users/xueqilu/Desktop/605/FinalProjectDraft/draft6/city_temperature.csv")
+datas1 <- datas[datas$City == "Chicago",]
+datas1 <- datas1[datas1$Year %in% c("2005","2007","2009","2011","2013","2015"), ]
+datas1$date <- as.Date(paste(datas1$Year,"-",datas1$Month,"-",datas1$Day,sep = ""))
+dat2 <- datas1[, c("date",  "AvgTemperature", "Year")]
+dat2$year <- as.integer(dat2$Year)
+dat2$weekdayf <- weekdays(dat2$date) 
+dat2$week <- ceiling(day(dat2$date) / 7)
+dat2$monthf <- months(dat2$date)
+dat2$yearmonth <- as.yearmon(dat2$date)
+dat2$yearmonthf <- factor(dat2$yearmonth)
+dat2_df <- ddply(dat2,.(yearmonthf), transform, monthweek=1+week-min(week))
+dat2_df$weekdayf  <- factor(dat2_df$weekdayf , 
+                            levels = c("Monday","Tuesday","Wednesday",
+                                       "Thursday","Friday","Saturday","Sunday"))
+dat2_df$monthf  <- factor(dat2_df$monthf , 
+                          levels = c("January","February","March","April","May",
+                                     "June","July","August","September",
+                                     "October","November","December" ))
+ggplot(dat2_df, aes(monthweek, weekdayf, fill = AvgTemperature)) + 
+  geom_tile(colour = "white") + 
+  facet_grid(year~monthf) + 
+  scale_fill_gradient(low="blue", high="orange") +
+  labs(x="Week of Month",
+       y="",
+       title = "Average Temperature in 2005-2015 Heatmap", 
+       fill="Temperature")+    
+  theme(plot.title = element_text(hjust=0.5),
+          legend.text = element_text(size=8),
+          legend.key.size = unit(15, 'pt'),
+          legend.title = element_blank(),
+          legend.position = "bottom",
+          axis.title.y = element_text(margin=margin(r=8)),
+          axis.title.x = element_text(margin=margin(t=10)))
+
+@
+
+
+As you can tell, the results were just as expected. The warmer temperatures were between the months of May and October and the colder months were between the months of November and April. Though it slightly varies year to year, this can probably be taken as the general consensus.
+
+
+\item 
+For our Killer plot, we decided to mix and match a few different variables together. The variables we chose were Crime Type (in this case, we are looking at theft), Number of Cases, Arrests/Non-Arrests, Temperatures, Months, Years, and variation of temperature from the median temperature of that specific year. We want to see from this graph whether the crime rate has a linear relationship with temperature.
+
+Firstly, we decided to split the plot into two halves. One half was for the analysis of the colder months and One half was for the analysis of the warmer months. The classification of the months (warm and cold) was solely dependent on the median temperature of that specific year (unlike the average temperature, choosing the median temperature can avoid the influence of individual extreme weather in the month or year). For a better visualization, we decided to draw a line to represent the year’s median temperature and arrows next to each month visualizing the variation of that month's median temperature from the year's median temperature. 
+
+Next, we wanted to visualize the trend of theft cases across the cold months and across the warm months and to do that, we plotted the trend in theft cases on each half of our plot to better show the numbers. The scale was placed dead center between the two halves. 
+
+Lastly, we figured it would be interesting to analyze the percentage of Arrests/Non-Arrests during the cold months and the warm months. Instead of plotting it, we decided that in order for our plot to look nice and clean, we would display these percentages on the top of the plots. We later found out that the percentages year by year for Arrests/Non-Arrests were quite similar. Our Killer Plot of year 2010 and 2015 can be found below:
+(Method: Grid)
+
+<<warning=FALSE, echo=FALSE, message=FALSE>>=
+# data for plot
+dcon <- dbConnect(SQLite(), dbname="/Users/xueqilu/Desktop/605/FinalProjectDraft/draft6/ChicagoCrime.sqlite")
+# Median Temp For Each Month
+res <- dbSendQuery(conn = dcon, "
+SELECT Year, Month, Median(AvgTemperature) As MedianTemp
+FROM dailytemp
+GROUP BY Year, Month
+")
+MonthMedTemp <- dbFetch(res, -1)
+dbClearResult(res)
+# Median Temp For Year
+res <- dbSendQuery(conn = dcon, "
+SELECT Year, Median(AvgTemperature) As MedianTemp
+FROM dailytemp
+GROUP BY Year
+")
+YearMedTemp <- dbFetch(res, -1)
+dbClearResult(res)
+# Theft Count
+res <- dbSendQuery(conn = dcon, "
+SELECT tc.Date, dt.Month, dt.year, Count(tc.ID) As CrimeNum, dt.AvgTemperature
+FROM theftcrime As tc INNER JOIN dailytemp As dt On tc.Date=dt.Date
+GROUP BY tc.Date 
+ORDER BY dt.Year, dt.Month
+")
+CrimeCountTemp <- dbFetch(res, -1)
+dbClearResult(res)
+# Arrest Num
+res <- dbSendQuery(conn = dcon, "
+SELECT dt.Month, dt.year, count(tc.Arrest) As arrest
+FROM theftcrime As tc INNER JOIN dailytemp As dt On tc.Date=dt.Date and tc.Arrest=='true'
+GROUP BY dt.Year, dt.Month
+ORDER BY dt.Year, dt.Month
+")
+arrest <- dbFetch(res, -1)
+dbClearResult(res)
+# total Num
+res <- dbSendQuery(conn = dcon, "
+SELECT dt.Month, dt.year, count(tc.Arrest) As total
+FROM theftcrime As tc INNER JOIN dailytemp As dt On tc.Date=dt.Date 
+GROUP BY dt.Year, dt.Month
+ORDER BY dt.Year, dt.Month
+")
+total <- dbFetch(res, -1)
+dbClearResult(res)
+
+dbDisconnect(dcon)
+@
+
+<<warning=FALSE, echo=FALSE, message=FALSE>>=
+# plot function code
+
+# crtyrs: current year
+theftdiffbytemp <- function(crtyrs, ArrestRate){
+  # current year median temp
+  medtemp <- YearMedTemp[YearMedTemp$Year==crtyrs,]$MedianTemp 
+  # cold month
+  coldm <- MonthMedTemp[MonthMedTemp$Year==crtyrs & MonthMedTemp$MedianTemp<=medtemp,]$Month
+  # warm month
+  hotm <- MonthMedTemp[MonthMedTemp$Year==crtyrs & MonthMedTemp$MedianTemp>medtemp,]$Month
+  grid.newpage()
+  # cold weather plot
+  vp1 <- viewport(x = 0, y = 0.25, width = 0.5, height = 0.80,
+                 just = c("left", "bottom"))
+  # warm weather plot
+  vp2 <- viewport(x = 0.5, y = 0.25, width = 0.5, height = 0.80,
+                  just = c("left", "bottom"))
+  # median temp plot(cold)
+  vp3 <- viewport(x = 0, y = 0, width = 0.5, height = 0.25,
+                  just = c("left", "bottom"))
+  # median temp plot(warm)
+  vp4 <- viewport(x = 0.5, y = 0, width = 0.5, height = 0.25,
+                  just = c("left", "bottom"))
+  # median temp whole year
+  vp5 <- viewport(x = 0, y = 0, width = 1, height = 0.25,
+                  just = c("left", "bottom"))
+
+  # arrest and un-arrest
+  arrestdata <- cbind(arrest, total)[,c(1,2,3,6)]
+  arrestcold <- arrestdata[arrestdata$Year==crtyrs & arrestdata$Month %in% coldm,]
+  arrestwarm <- arrestdata[arrestdata$Year==crtyrs & arrestdata$Month %in% hotm,]
+  arrestincold <- round(sum(arrestcold$arrest)/sum(arrestcold$total),2)
+  arrestinwarm <- round(sum(arrestwarm$arrest)/sum(arrestwarm$total),2)
+  # show arrest rate
+  if(ArrestRate == TRUE){
+    grid.rect(x = .25, y = 0.95-0.95*(arrestincold)/2, 
+              width = 0.5, height = 0.95*arrestincold,gp = gpar(fill="#F0F8FF",col=0))
+    grid.rect(x = .75, y = 0.95-0.95*(arrestinwarm)/2, 
+              width = 0.5, height = 0.95*arrestinwarm,gp = gpar(fill="#FBE7E0",col=0))
+  }
+  # grid background
+  grid.rect()
+  grid1 <- seq(0,0.5,0.5/(length(coldm)))
+  grid2 <- seq(0.5,1,0.5/(length(hotm)))
+  grid.segments(unit(grid1[-1],"npc"),unit(rep(0, length(grid1)-1),"npc"),
+                unit(grid1[-1],"npc"),unit(rep(.95, length(grid1)-1),"npc"),
+                gp = gpar(col="grey88"))
+  grid.segments(unit(grid2[-length(grid2)],"npc"),unit(rep(0, length(grid2)-1),"npc"),
+                unit(grid2[-length(grid2)],"npc"),unit(rep(.95, length(grid2)-1),"npc"),
+                gp = gpar(col="grey88"))
+  grid.segments(unit(0,"npc"),unit(.95,"npc"),unit(1,"npc"),unit(.95,"npc"),gp = gpar(col="black"))
+  grid.segments(unit(.5,"npc"),unit(0,"npc"),unit(.5,"npc"),unit(1,"npc"),gp = gpar(col="grey50", lty=2))
+  # show arrest rate
+  if(ArrestRate == TRUE){
+    grid.text(paste0(arrestincold*100,"% Arrested"),x = .25, y = 0.95-0.95*(arrestincold)/2,
+              gp = gpar(col="#4169E1", cex = 0.7))
+    grid.text(paste0(arrestinwarm*100,"% Arrested"),x = .75, y = 0.95-0.95*(arrestinwarm)/2,
+              gp = gpar(col="#CD5C5C", cex = 0.7))
+  }
+  # vp1
+  pushViewport(vp1)
+  grid.text(paste0(length(coldm)," Cold Months"), .5, .905, just =  c("centre"), gp=gpar(cex=0.8))
+  crtdata1 <- CrimeCountTemp[CrimeCountTemp$Year==crtyrs & CrimeCountTemp$Month %in% coldm,]
+  x1 <- seq(1:nrow(crtdata1))
+  y1 <- crtdata1$CrimeNum
+  pushViewport(dataViewport(x1, y1, yscale = c(50, 550)))
+  grid.yaxis(at=c(80, 160, 240, 320, 400),main=FALSE,label = FALSE,gp=gpar(cex=0.3))
+  grid.lines(unit(x1,"native"),unit(y1,"native"),gp=gpar(col="blue"))
+  grid.points(x1, y1,pch = 20,gp=gpar(col="blue",cex=0.02))
+  
+  popViewport(2)
+  # vp2
+  pushViewport(vp2)
+  grid.text(paste0(length(hotm)," Warm Months"), .5, .905, just =  c("centre"), gp=gpar(cex=0.8))
+  crtdata2 <- CrimeCountTemp[CrimeCountTemp$Year==crtyrs & CrimeCountTemp$Month %in% hotm,]
+  x2 <- seq(1:nrow(crtdata2))
+  y2 <- crtdata2$CrimeNum
+  pushViewport(dataViewport(x2, y2, yscale = c(50, 550)))
+  grid.yaxis(at=c(80, 160, 240, 320, 400),label = FALSE,gp = gpar(cex = 0.2))
+  grid.lines(unit(x2,"native"),unit(y2,"native"),gp=gpar(col="red"))
+  grid.points(x2, y2, pch=20,gp=gpar(col = "red", cex = 0.02))
+  popViewport(2)
+  # vp3
+  pushViewport(vp3)
+  x <- seq(0,1,1/(length(coldm)))
+  y <- MonthMedTemp[MonthMedTemp$Year==crtyrs & 
+                    MonthMedTemp$MedianTemp<=medtemp,]$MedianTemp
+  pushViewport(dataViewport(x, y, yscale = c(0, 80)))
+  grid.points(unit(x[-length(x)]+0.5/(length(coldm)),"npc"), y, pch = 25,
+              gp = gpar(col = "blue",fill="blue",cex = 0.1))
+  grid.segments(unit(x[-length(x)]+0.5/(length(coldm)),"npc"),unit(y,"native"),
+                unit(x[-length(x)]+0.5/(length(coldm)),"npc"),unit(rep(medtemp, length(coldm)),"native"),
+                gp = gpar(col="blue",lty=4))
+  grid.text(noquote(month.abb[coldm]), unit(x[-length(x)]+0.5/(length(coldm)),"npc"),
+            unit(rep(0.1, length(coldm)),"npc"),just =  c("centre","centre"),
+            gp = gpar(col = "grey35", cex=0.7))
+  popViewport(2)
+  # vp4
+  pushViewport(vp4)
+  x <- seq(0,1,1/(length(hotm)))
+  y <- MonthMedTemp[MonthMedTemp$Year==crtyrs & 
+                      MonthMedTemp$MedianTemp>medtemp,]$MedianTemp
+  pushViewport(dataViewport(x, y,  yscale = c(0, 80)))
+  grid.points(unit(x[-length(x)]+0.5/(length(hotm)),"npc"), y, pch = 24, 
+              gp = gpar(col = "red", fill="red", cex = 0.1))
+  grid.segments(unit(x[-length(x)]+0.5/(length(hotm)),"npc"),unit(rep(medtemp, length(coldm)),"native"),
+                unit(x[-length(x)]+0.5/(length(hotm)),"npc"), unit(y,"native"),gp = gpar(col="red",lty=4))
+  grid.text(noquote(month.abb[hotm]), unit(x[-length(x)]+0.5/(length(hotm)),"npc"),
+            unit(rep(0.1, length(hotm)),"npc"),just =  c("centre","centre"),gp = gpar(col = "grey35", cex=0.7))
+  popViewport(2)
+  # vp5
+  pushViewport(vp5)
+  pushViewport(dataViewport(x, y, yscale = c(0, 80)))
+  grid.points(unit(0.5,"npc"),medtemp, pch = 8)
+  grid.text(paste0("Allyear\nMedian\nTemp"),unit(0.5, "npc"), unit(medtemp-18,"native"),
+            just=c("centre","centre"),gp=gpar(cex=.4))
+  grid.text(paste0(medtemp,"\u00B0F"),unit(0.5, "npc"), unit(medtemp+10,"native"),
+            just=c("centre","centre"),gp=gpar(cex=.4))
+  grid.segments(unit(0,"npc"),unit(medtemp,"native"),
+                unit(1,"npc"), unit(medtemp,"native"),
+                gp = gpar(col="black",lty=2,lwd=.8))
+  
+  popViewport(2)
+  grid.text(c("80","160","240","320","400"), .5, c(.312,.441,.57,.698,.825), 
+            just = c("centre","centre"), gp=gpar(cex=.46))
+  grid.text("Theft Crime\nCases",0.5, .89, just=c("centre","centre"),gp=gpar(cex=.4))
+  grid.text(paste0(crtyrs),0.5, .9735, just =  c("centre"), gp=gpar(cex=0.8, fontface = "bold"))
+}
+@
+
+% \includegraphics[width=.95\textwidth]{/Users/xueqilu/Desktop/killer.png}
+
+\begin{figure}[H]
+<<echo=FALSE,results='hide',fig.align='center',warning=FALSE,fig.width=3.5, fig.height=3.5>>=
+theftdiffbytemp(2010, TRUE)
+theftdiffbytemp(2015, TRUE)
+@
+\caption{Temperature-Theft Crime: Cold VS Warm Month}
+\end{figure}
+
+From the plot we can draw two obvious conclusions:
+
+1. Each of these killer plots shows that the overall temperature trend and the crime rate trend are basically consistent. We cannot clearly see the relationship between temperature and crime rate in 2015 in the previous heat map of time and crime rate but the killer plot shows it clearly. We can assume there is a linear relationship between temperature and crime rate and we will do a linear regression analysis on temperature and crime rate.
+
+2. The arrest rate in the warm month is generally lower than that in the cold month. This may be because temperature has little effect on arrest efficiency but has an obvious effect on crime rate.
+
+
+
+\item 
+
+After discovering that temperature may have an effect on theft, we hope to conduct a more detailed analysis. We previously divided the 200+ location types in the data set into six categories: Residence, Street, Store, Vehicles, Public Building and other. We all know that the temperature in the public building in summer must be different from the temperature in the street, and the temperature in the day and night differ greatly. So we added more variables to analyze the relationship between the number of crimes and locations, time, temperature, etc.
+
+(Method: Grid)
+<<warning=FALSE, echo=FALSE, message=FALSE>>=
+#### Select cold an dwarm cases num from the sql db.
+dcon <- dbConnect(SQLite(), dbname="/Users/xueqilu/Desktop/605/FinalProjectDraft/draft7/ChicagoCrime.sqlite")
+# overall case by cold and warm month 
+res <- dbSendQuery(conn = dcon, "
+SELECT dt.Year, hotmonth, Count(ID) AS Cases
+FROM theftcrime AS tc INNER JOIN 
+(dailytemp As dt INNER JOIN coldwarm As cw on dt.Year=cw.Year and dt.Month=cw.Month) 
+on dt.Date=tc.Date
+GROUP BY dt.Year, hotmonth
+")
+Warmcase <- dbFetch(res, -1)
+dbClearResult(res)
+
+# diff location case by cold and warm month
+res <- dbSendQuery(conn = dcon, "
+SELECT dt.Year, Location, hotmonth, Count(ID) AS Cases
+FROM theftcrime AS tc INNER JOIN 
+(dailytemp As dt INNER JOIN coldwarm As cw on dt.Year=cw.Year and dt.Month=cw.Month) 
+on dt.Date=tc.Date
+GROUP BY dt.Year, Location, hotmonth
+")
+LocWarmcase <- dbFetch(res, -1)
+dbClearResult(res)
+
+# overall case num and temp (avg and median) 
+res <- dbSendQuery(conn = dcon, "
+SELECT dt.Year, Count(ID) AS Cases, AVG(AvgTemperature) AS AvgTemp, Median(AvgTemperature) AS MidTemp
+FROM dailytemp AS dt INNER JOIN theftcrime AS tc on dt.Date=tc.Date
+GROUP BY dt.Year
+")
+Avgcase <- dbFetch(res, -1)
+dbClearResult(res)
+
+# diff location case num and avgtemp (avg and median)
+res <- dbSendQuery(conn = dcon, "
+SELECT dt.Year, Location, Count(ID) AS Cases, AVG(AvgTemperature) AS AvgTemp, Median(AvgTemperature) AS MidTemp
+FROM dailytemp AS dt INNER JOIN theftcrime AS tc on dt.Date=tc.Date
+GROUP BY dt.Year, Location
+")
+LocAvgcase <- dbFetch(res, -1)
+dbClearResult(res)
+
+res <- dbSendQuery(conn = dcon, "
+SELECT year, hotmonth, count(hotmonth) As count
+FROM coldwarm
+GROUP BY Year, hotmonth
+")
+coldwarm <- dbFetch(res, -1)
+dbClearResult(res)
+
+#### day and night count
+dcon <- dbConnect(SQLite(), dbname="/Users/xueqilu/Desktop/605/FinalProjectDraft/draft7/ChicagoCrime.sqlite")
+res <- dbSendQuery(conn = dcon, "
+SELECT *
+FROM crimetime
+")
+dayandnight <- dbFetch(res, -1)
+dbClearResult(res)
+dbDisconnect(dcon)
+dayandnight$daynight <- ifelse(dayandnight$Time>dayandnight$Rise & dayandnight$Time<dayandnight$Set, "day", "night")
+@
+
+<<warning=FALSE, echo=FALSE, message=FALSE>>=
+#### Grid plot for cases on locations.
+
+locationplot <- function(year,show_tieline,show_locationAvg, show_dayandnight){
+  grid.newpage()
+  # Location: Public Building
+  vp1 <- viewport(x = 0, y = .85, width = .7, height = 0.15,
+                 just = c("left", "bottom"))
+  # Location: Residence
+  vp2 <- viewport(x = 0, y = .7, width = .7, height = 0.15,
+                  just = c("left", "bottom"))
+  # Location: Store
+  vp3 <- viewport(x = 0, y = .55, width = .7, height = 0.15,
+                  just = c("left", "bottom"))
+  # Location: Street
+  vp4 <- viewport(x = 0, y = .4, width = .7, height = 0.15,
+                  just = c("left", "bottom"))
+  # Location: Vehicle
+  vp5 <- viewport(x = 0, y = .25, width = .7, height = 0.15,
+                  just = c("left", "bottom"))
+  # Location: Others 
+  vp6 <- viewport(x = 0, y = .1, width = .7, height = 0.15,
+                  just = c("left", "bottom"))
+  grid.text(c("Others","Vehicle","Street","Store","Residence","Public Building"),
+            .85, c(.175,.325,.475,.625,.775,.925), just = c("centre","centre"), gp=gpar(cex=1))
+  ryear <- Avgcase[Avgcase$Year==year,]$Cases/6
+
+  # vp1
+  pushViewport(vp1)
+  bluenum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="PUBLIC BUILDING" 
+                        & LocWarmcase$hotmonth == "False",]$Cases/
+            coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+  rednum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="PUBLIC BUILDING" 
+                       & LocWarmcase$hotmonth == "True",]$Cases/
+           coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+  rloc <- LocAvgcase[LocAvgcase$Year==year&LocAvgcase$Location=="PUBLIC BUILDING",]$Cases
+  colc <- ifelse(Avgcase[Avgcase$Year==year,]$AvgTemp<
+     LocAvgcase[LocAvgcase$Year==year & LocAvgcase$Location=="PUBLIC BUILDING",]$AvgTemp,
+    "darksalmon","lightsteelblue")
+  grid.circle(x = bluenum/(bluenum+rednum), y = .5, r = rloc/ryear/3, gp = gpar(col=colc, fill = colc))
+  if(show_locationAvg == TRUE){
+    a = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="False",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+    b = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="True",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+    grid.points(unit(a/(a+b),"npc"),.5, pch = 4, gp=gpar(cex=.9, col="grey10"))
+    grid.circle(x = a/(a+b), y = .5, r = 1/3, gp = gpar(col="grey10", lty=4))
+  }
+  grid.segments(unit(0,"npc"),unit(.5,"npc"),
+                unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                gp = gpar(col="blue"))
+  grid.segments(unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                unit(1,"npc"),unit(.5,"npc"),
+                gp = gpar(col="red"))
+  grid.points(unit(bluenum/(bluenum+rednum),"npc"),.5, pch = 20, gp=gpar(cex=.7))
+  if(show_dayandnight == TRUE){
+    daynum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="PUBLIC BUILDING"&
+              dayandnight$daynight=="day",])
+    daynightnum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="PUBLIC BUILDING",])
+    grid.text(paste0(round(daynum/daynightnum*100,0),"%"),0, .54, just = c("left","bottom"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text(paste0(round((1-daynum/daynightnum)*100,0),"%"),0, .46, just = c("left","top"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text("DAY",1, .54, just = c("right","bottom"), gp=gpar(cex=.75,col="grey40"))
+    grid.text("NIGHT",1, .45, just = c("right","top"), gp=gpar(cex=.75,col="grey40"))
+  }
+  popViewport()
+  
+  # vp2
+  pushViewport(vp2)
+  bluenum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="RESIDENCE" 
+                        & LocWarmcase$hotmonth == "False",]$Cases/
+            coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+  rednum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="RESIDENCE" 
+                       & LocWarmcase$hotmonth == "True",]$Cases/
+           coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+  rloc <- LocAvgcase[LocAvgcase$Year==year&LocAvgcase$Location=="RESIDENCE",]$Cases
+  colc <- ifelse(Avgcase[Avgcase$Year==year,]$AvgTemp<
+     LocAvgcase[LocAvgcase$Year==year & LocAvgcase$Location=="RESIDENCE",]$AvgTemp,
+    "darksalmon","lightsteelblue")
+  grid.circle(x = bluenum/(bluenum+rednum), y = .5, r = rloc/ryear/4, gp = gpar(col=colc, fill = colc))
+  if(show_locationAvg==TRUE){
+    a = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="False",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+    b = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="True",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+    grid.points(unit(a/(a+b),"npc"),.5, pch = 4, gp=gpar(cex=.9, col="grey10"))
+    grid.circle(x = a/(a+b), y = .5, r = 1/3, gp = gpar(col="grey10", lty=4))
+  }
+  grid.segments(unit(0,"npc"),unit(.5,"npc"),
+                unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                gp = gpar(col="blue"))
+  grid.segments(unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                unit(1,"npc"),unit(.5,"npc"),
+                gp = gpar(col="red"))
+  grid.points(unit(bluenum/(bluenum+rednum),"npc"),.5, pch = 20, gp=gpar(cex=.7))
+  if(show_dayandnight == TRUE){
+    daynum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="RESIDENCE"&
+              dayandnight$daynight=="day",])
+    daynightnum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="RESIDENCE",])
+    grid.text(paste0(round(daynum/daynightnum*100,0),"%"),0, .55, just = c("left","bottom"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text(paste0(round((1-daynum/daynightnum)*100,0),"%"),0, .46, just = c("left","top"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text("DAY",1, .54, just = c("right","bottom"), gp=gpar(cex=.75,col="grey40"))
+    grid.text("NIGHT",1, .45, just = c("right","top"), gp=gpar(cex=.75,col="grey40"))
+  }
+  popViewport()
+  
+  # vp3
+  pushViewport(vp3)
+  bluenum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="STORE" 
+                        & LocWarmcase$hotmonth == "False",]$Cases/
+            coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+  rednum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="STORE" 
+                       & LocWarmcase$hotmonth == "True",]$Cases/
+           coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+  rloc <- LocAvgcase[LocAvgcase$Year==year&LocAvgcase$Location=="STORE",]$Cases
+  colc <- ifelse(Avgcase[Avgcase$Year==year,]$AvgTemp<
+     LocAvgcase[LocAvgcase$Year==year & LocAvgcase$Location=="STORE",]$AvgTemp,
+    "darksalmon","lightsteelblue")
+  grid.circle(x = bluenum/(bluenum+rednum), y = .5, r = rloc/ryear/4, gp = gpar(col=colc, fill = colc))
+  if(show_locationAvg==TRUE){
+    a = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="False",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+    b = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="True",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+    grid.points(unit(a/(a+b),"npc"),.5, pch = 4, gp=gpar(cex=.9, col="grey10"))
+    grid.circle(x = a/(a+b), y = .5, r = 1/3, gp = gpar(col="grey10", lty=4))
+  }
+  grid.segments(unit(0,"npc"),unit(.5,"npc"),
+                unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                gp = gpar(col="blue"))
+  grid.segments(unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                unit(1,"npc"),unit(.5,"npc"),
+                gp = gpar(col="red"))
+  grid.points(unit(bluenum/(bluenum+rednum),"npc"),.5, pch = 20, gp=gpar(cex=.7))
+  if(show_dayandnight == TRUE){
+    daynum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="STORE"&
+              dayandnight$daynight=="day",])
+    daynightnum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="STORE",])
+    grid.text(paste0(round(daynum/daynightnum*100,0),"%"),0, .55, just = c("left","bottom"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text(paste0(round((1-daynum/daynightnum)*100,0),"%"),0, .46, just = c("left","top"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text("DAY",1, .54, just = c("right","bottom"), gp=gpar(cex=.75,col="grey40"))
+    grid.text("NIGHT",1, .45, just = c("right","top"), gp=gpar(cex=.75,col="grey40"))
+  }
+  popViewport()
+  
+  # vp4
+  pushViewport(vp4)
+  bluenum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="STREET" 
+                        & LocWarmcase$hotmonth == "False",]$Cases/
+            coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+  rednum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="STREET" 
+                       & LocWarmcase$hotmonth == "True",]$Cases/
+           coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+  rloc <- LocAvgcase[LocAvgcase$Year==year&LocAvgcase$Location=="STREET",]$Cases
+  colc <- ifelse(Avgcase[Avgcase$Year==year,]$AvgTemp<
+     LocAvgcase[LocAvgcase$Year==year & LocAvgcase$Location=="STREET",]$AvgTemp,
+    "darksalmon","lightsteelblue")
+  grid.circle(x = bluenum/(bluenum+rednum), y = .5, r = rloc/ryear/4, gp = gpar(col=colc, fill = colc))
+  if(show_locationAvg==TRUE){
+    a = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="False",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+    b = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="True",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+    grid.points(unit(a/(a+b),"npc"),.5, pch = 4, gp=gpar(cex=.9, col="grey10"))
+    grid.circle(x = a/(a+b), y = .5, r = 1/3, gp = gpar(col="grey10", lty=4))
+  }
+  grid.segments(unit(0,"npc"),unit(.5,"npc"),
+                unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                gp = gpar(col="blue"))
+  grid.segments(unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                unit(1,"npc"),unit(.5,"npc"),
+                gp = gpar(col="red"))
+  grid.points(unit(bluenum/(bluenum+rednum),"npc"),.5, pch = 20, gp=gpar(cex=.7))
+  if(show_dayandnight == TRUE){
+    daynum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="STREET"&
+              dayandnight$daynight=="day",])
+    daynightnum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="STREET",])
+    grid.text(paste0(round(daynum/daynightnum*100,0),"%"),0, .55, just = c("left","bottom"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text(paste0(round((1-daynum/daynightnum)*100,0),"%"),0, .46, just = c("left","top"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text("DAY",1, .54, just = c("right","bottom"), gp=gpar(cex=.75,col="grey40"))
+    grid.text("NIGHT",1, .45, just = c("right","top"), gp=gpar(cex=.75,col="grey40"))
+  }
+  popViewport()
+  
+  # vp5
+  pushViewport(vp5)
+  bluenum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="VEHICLE" 
+                        & LocWarmcase$hotmonth == "False",]$Cases/
+            coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+  rednum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="VEHICLE" 
+                       & LocWarmcase$hotmonth == "True",]$Cases/
+           coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+  rloc <- LocAvgcase[LocAvgcase$Year==year&LocAvgcase$Location=="VEHICLE",]$Cases
+  colc <- ifelse(Avgcase[Avgcase$Year==year,]$AvgTemp<
+     LocAvgcase[LocAvgcase$Year==year & LocAvgcase$Location=="VEHICLE",]$AvgTemp,
+    "darksalmon","lightsteelblue")
+  grid.circle(x = bluenum/(bluenum+rednum), y = .5, r = rloc/ryear/4, gp = gpar(col=colc, fill = colc))
+  if(show_locationAvg==TRUE){
+    a = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="False",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+    b = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="True",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+    grid.points(unit(a/(a+b),"npc"),.5, pch = 4, gp=gpar(cex=.9, col="grey10"))
+    grid.circle(x = a/(a+b), y = .5, r = 1/3, gp = gpar(col="grey10", lty=4))
+  }
+  grid.segments(unit(0,"npc"),unit(.5,"npc"),
+                unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                gp = gpar(col="blue"))
+  grid.segments(unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                unit(1,"npc"),unit(.5,"npc"),
+                gp = gpar(col="red"))
+  grid.points(unit(bluenum/(bluenum+rednum),"npc"),.5, pch = 20, gp=gpar(cex=.7))
+  if(show_dayandnight == TRUE){
+    daynum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="VEHICLE"&
+              dayandnight$daynight=="day",])
+    daynightnum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="VEHICLE",])
+    grid.text(paste0(round(daynum/daynightnum*100,0),"%"),0, .55, just = c("left","bottom"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text(paste0(round((1-daynum/daynightnum)*100,0),"%"),0, .46, just = c("left","top"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text("DAY",1, .54, just = c("right","bottom"), gp=gpar(cex=.75,col="grey40"))
+    grid.text("NIGHT",1, .45, just = c("right","top"), gp=gpar(cex=.75,col="grey40"))
+  }
+  popViewport()
+  
+  # vp6
+  pushViewport(vp6)
+  bluenum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="OTHERS" 
+                        & LocWarmcase$hotmonth == "False",]$Cases/
+            coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+  rednum = LocWarmcase[LocWarmcase$Year==year & LocWarmcase$Location=="OTHERS" 
+                       & LocWarmcase$hotmonth == "True",]$Cases/
+           coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+  rloc <- LocAvgcase[LocAvgcase$Year==year&LocAvgcase$Location=="OTHERS",]$Cases
+  colc <- ifelse(Avgcase[Avgcase$Year==year,]$AvgTemp<
+     LocAvgcase[LocAvgcase$Year==year & LocAvgcase$Location=="OTHERS",]$AvgTemp,
+    "darksalmon","lightsteelblue")
+  grid.circle(x = bluenum/(bluenum+rednum), y = .5, r = rloc/ryear/4, gp = gpar(col=colc, fill = colc))
+  if(show_locationAvg==TRUE){
+    a = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="False",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "False",]$count
+    b = Warmcase[Warmcase$Year==year & Warmcase$hotmonth=="True",]$Cases/
+        coldwarm[coldwarm$Year==year & coldwarm$hotmonth == "True",]$count
+    grid.points(unit(a/(a+b),"npc"),.5, pch = 4, gp=gpar(cex=.9, col="grey10"))
+    grid.circle(x = a/(a+b), y = .5, r = 1/3, gp = gpar(col="grey10", lty=4))
+  }
+  grid.segments(unit(0,"npc"),unit(.5,"npc"),
+                unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                gp = gpar(col="blue"))
+  grid.segments(unit(bluenum/(bluenum+rednum),"npc"),unit(.5,"npc"),
+                unit(1,"npc"),unit(.5,"npc"),
+                gp = gpar(col="red"))
+  grid.points(unit(bluenum/(bluenum+rednum),"npc"),.5, pch = 20, gp=gpar(cex=.7))
+  if(show_dayandnight == TRUE){
+    daynum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="OTHERS"&
+              dayandnight$daynight=="day",])
+    daynightnum <- nrow(dayandnight[dayandnight$Year==year&dayandnight$Location=="OTHERS",])
+    grid.text(paste0(round(daynum/daynightnum*100,0),"%"),0, .55, just = c("left","bottom"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text(paste0(round((1-daynum/daynightnum)*100,0),"%"),0, .46, just = c("left","top"), 
+              gp=gpar(cex=.8,col="grey40"))
+    grid.text("DAY",1, .54, just = c("right","bottom"), gp=gpar(cex=.75,col="grey40"))
+    grid.text("NIGHT",1, .45, just = c("right","top"), gp=gpar(cex=.75,col="grey40"))
+  }
+  popViewport()
+  
+  if(show_tieline == TRUE){
+  grid.segments(unit(.35,"npc"),unit(.1,"npc"),
+              unit(.35,"npc"),unit(1,"npc"),
+              gp = gpar(col="black", lty=3))
+  grid.text("Cases per Month\n Cold Months = Warm Months", .35, .07, 
+            just=c("centre","centre"),gp=gpar(cex=.7))
+  }
+  # line legend
+  grid.segments(.02,.065,.05,.065, gp = gpar(col="blue"))
+  grid.segments(.02,.045,.05,.045, gp = gpar(col="red"))
+  grid.text("Cold Month",.055, .065,just = c("left","centre"),gp=gpar(cex=.75))
+  grid.text("Warm Month",.055, .045,just = c("left","centre"),gp=gpar(cex=.75))
+  grid.text("Cases per Month",.021, .09,just = c("left","centre"),gp=gpar(cex=.75))
+  grid.rect(.09,.065,.18,.08)
+  # circle legend
+  grid.points(unit(.695,"npc"),unit(.065,"npc"),pch = 20,gp = gpar(col="lightsteelblue"))
+  grid.points(unit(.695,"npc"),unit(.045,"npc"),pch = 20, gp = gpar(col="darksalmon"))
+  grid.text("Avg Temp below Total Avg",.72, .065,just = c("left","centre"),gp=gpar(cex=.75))
+  grid.text("Avg Temp above Total Avg",.72, .045,just = c("left","centre"),gp=gpar(cex=.75))
+  grid.text("Cases by Location",.737, .09,just = c("left","centre"),gp=gpar(cex=.75))
+  grid.rect(.81,.065,.28,.08)
+}
+@
+
+\textbf{Basic Plot Explanation:}
+
+\textbf{Line:} Each line represents a location.
+
+\textbf{Center of circle:} Since the number of cold months may not equal to the warm months so we first calculated monthly average crime cases for cold month and warm month respectively, and the center of the circle represents the ratio of the monthly average crime cases.
+
+\textbf{Size of circle:} Theft cases number of that location.
+
+\textbf{Color of circle:} Using average temp when theft happens V.S. average temp of this year.
+If hotter than average temp then it is red. Cooler then blue.
+
+\textbf{Parameter: show-tieline}
+
+*\textbf{Dotted line:} Located at the point that the ratio of the monthly average crime cases in cold month and warm month is 1:1.
+
+\textbf{Parameter: show-locationAvg}
+
+*\textbf{Dashed Circle (Unit Circle):} Average cases (all case/6 locations) and average ratio (cases happened cold month to warm month).
+
+\textbf{Compare the solid circle with dash circle:} 
+
+If the center of solid circle not closed to the center of dashed circle, The influence of the time might be varied on the theft crime to the location. 
+
+If solid circle is bigger, then a greater proportion of thefts occur at this location.
+
+
+\textbf{Parameter: show-dayandnight}
+
+\textbf{Rate on the left of line:} The percentage above the line represents the proportion of theft occurring during the daytime. The percentage under the line represents the proportion of theft occurring during night.
+
+
+When we use shinny to present this killer plot, we can see the different effects of temperature, location and time on the crime rate in different years.
+
+
+\begin{figure}[H]
+<<warning=FALSE, echo=FALSE, message=FALSE>>=
+locationplot(2010, show_tieline=TRUE, show_locationAvg=TRUE, 
+             show_dayandnight=TRUE)
+@
+\caption{Theft and Related Factors in Six Location Groups}
+\end{figure}
+\newpage
+
+
+\item
+By observing the first two graphs, we really want to confirm what kind of linear relationship exists between temperature and the number of theft crimes, and whether we can predict the number of crimes through temperature. So we use linear regression to fit the data and first used the model 
+
+\begin{center}
+$y = \beta_0 + \beta_1x_1$ 
+\end{center}
+
+where $y$ represents daily theft crime cases, $x_1$ represents daily avgerage temperature. The following table shows the simple linear regression model result and it shows that there exist a strong relationship between the theft crime cases and temperature of that day. 
+
+\begin{table}[H]
+  \begin{center}
+<<results='asis', message=FALSE, echo=FALSE,fig.pos ="H", out.extra="">>=
+
+dw <- data.frame(Variables = c("Intercept", "AvgTemperature"),
+                   Estimate = c("153.09390", "1.08130"),
+                   "Std. Error" = c("1.61271", "0.02953"),
+                   "t value" = c("94.93", "36.62"),
+                   "p value" = c("$< 2e-16$", "$< 2e-16$")
+                   )
+kable(dw, "latex", booktabs = T,align = c('l','c','c','c','c'),linesep = "",escape = FALSE) %>%
+  kable_styling(position = "center",latex_options = c("HOLD_position"),font_size = 9)
+@
+  \caption{SLR Model Result}
+  \end{center}
+\end{table}
+
+Since we introduced the concept of cold and warm month from the temperature-theft plot, we further design a dummy variable to analyze group difference of the temperature influence on cases happened in cold or warm month.Therefore we use the model
+
+\begin{center}
+$y = \beta_0 + \beta_1x_1 + \beta_2x_2$
+\end{center}
+
+where $y$ represents theft crime cases, $x_1$ represents daily avgerage temperature and $x_2$ is a categorical variable which indicates whether this month belongs to hot month or not. 
+
+ $x_2 = 1$ if the month belongs to hot month;  
+ 
+ $x_2 = 0$ if the month belongs to cold month
+
+The table shows all statistic values of the coefficients and we can clearly see that all parameters are significant. 
+ 
+ 
+\begin{table}[H]
+  \begin{center}
+<<results='asis', message=FALSE, echo=FALSE,fig.pos ="H", out.extra="">>=
+
+dw <- data.frame(Variables = c("Intercept", "AvgTemperature", "hotmonthTrue"),
+                   Estimate = c("155.12166", "1.00202", "3.97317"),
+                   "Std. Error" = c("1.89758", "0.04902", "1.96134"),
+                   "t value" = c("81.747", "20.442", "2.026"),
+                   "p value" = c("$< 2e-16$", "$< 2e-16$", "$0.0429$")
+                   )
+kable(dw, "latex", booktabs = T,align = c('l','c','c','c','c'),linesep = "",escape = FALSE) %>%
+  kable_styling(position = "center",latex_options = c("HOLD_position"),font_size = 9)
+@
+  \caption{MLR Model Result}
+  \end{center}
+\end{table}
+
+
+<<warning=FALSE, echo=FALSE, message=FALSE,fig.height=5, fig.width=5>>=
+# plot(lm2,which=1:2)
+@
+
+\begin{figure}
+\includegraphics[width=.95\textwidth]{/Users/xueqilu/Desktop/dig.png}
+\caption{Diagnostic Plot}
+\end{figure}
+
+The diagnostic plots show that our model fit the data perfectly and our data follow the normal assumption.
+
+
+<<warning=FALSE, echo=FALSE, message=FALSE,fig.height=4.5>>=
+dcon <- dbConnect(SQLite(), dbname="/Users/xueqilu/Desktop/605/FinalProjectDraft/draft7/ChicagoCrime.sqlite")
+
+res <- dbSendQuery(conn = dcon, "
+SELECT tc.Date, Count(ID) As Count, AvgTemperature, hotmonth
+FROM (theftcrime As tc INNER JOIN dailytemp As dt on tc.Date = dt.Date) 
+INNER JOIN coldwarm As cw on dt.year = cw.Year and dt.Month = cw.Month
+GROUP BY tc.Date
+")
+test1 <- dbFetch(res, -1)
+dbClearResult(res)
+test1 <- test1[test1$AvgTemperature!=-99,]
+dbDisconnect(dcon)
+
+test1$hotmonth=ifelse(test1$hotmonth=="False", "True", "False")
+
+lm1 = lm(Count~AvgTemperature, data = test1)
+lm2 <- lm(Count~AvgTemperature + hotmonth, data = test1)
+
+equation1=function(x){coef(lm2)[2]*x+coef(lm2)[1]}
+equation2=function(x){coef(lm2)[2]*x+coef(lm2)[1]+coef(lm2)[3]}
+
+ggplot(test1,aes(y=Count,x=AvgTemperature,color=hotmonth))+geom_point()+
+        stat_function(fun=equation1,geom="line",color=scales::hue_pal()(2)[1])+
+        stat_function(fun=equation2,geom="line",color=scales::hue_pal()(2)[2])+
+  labs(colour="Cold Month or not")+
+    xlab("Daily Average Temperature") +
+    ylab("Daily Theft Cases") +
+    theme(plot.title = element_text(hjust=0.5,size = 10),
+          legend.text = element_text(size=8),
+          legend.key.size = unit(8, 'pt'),
+          legend.position = "bottom",
+          axis.title.y = element_text(margin=margin(r=8)),
+          axis.title.x = element_text(margin=margin(t=10)))
+@
+
+
+
+
+From the linear regression plot we can see that temperature has a great influence on theft crimes, the higher the temperature, the more crimes. The slope of the model is slightly different between cold and warm months, which means that the effect of temperature on crime is somewhat different between cold and warm months.
+
+\end{enumerate}
+
+\section{Conclusion}
+Through this entire analysis journey, we were able to draw up a few conclusions to the main question we have asked. Is theft crime rate directly correlated with temperature in Chicago? The short answer would be yes. In the data we were given to analyze, the theft rates and the temperature showed somewhat of a linear relationship. As temperature increases, theft rates as a whole increase as a result. We have also found that more arrests are made in the colder months than in the warmer months.This tells us that law-enforcement is more equipped to handle the cold weather of Chicago than the criminals. Realistically thinking, any type of theft would seem to be more difficult in the winter months than in the summer months. In fact, the weather in the Windy City shows no mercy to anyone walking the streets during the cold months and that could very well be a contributing factor. One surprising detail that our killer plot uncovered was that theft occurred mostly during the day rather than at night which went against our preconceived notions. Based on the analysis we have made, the advice we would give to the general public of Chicago is to be on the lookout for theft especially during the warmer months when the weather is not a roadblock or contributing factor that could make theft significantly more difficult. 
+
+\section{Reference}
+The primary dataset of Chicago Crimes (2001-Present) was extracted from the Chicago Data Portal provided by Chicago Police Department which is a government work not subject to copyright. The secondary dataset of Temperature Data Files for 157 U.S. and 167 International Cities is sourced from the National Climatic Data Center and collected by University of Dayton in their Environmental Protection Agency Average Daily Temperature Archive.
+
+[1] Chicago Data Portal - Crimes (2001 to Present), https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2
+
+[2] University of Dayton - Environmental Protection Agency Average Daily Temperature Archive, http://a-cademic.udayton.edu/kissock/http/Weather/default.htm 
+
+\end{document}
+
+
